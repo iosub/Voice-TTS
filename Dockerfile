@@ -21,10 +21,12 @@ WORKDIR /app
 COPY pyproject.toml /app
 RUN if echo "$BASE" | grep -q "cuda"; then \
       UV_TORCH_BACKEND=cu128; \
+      UV_EXTRAS="--extra all --extra cuda --extra codec-cuda"; \
     else \
       UV_TORCH_BACKEND=cpu; \
+      UV_EXTRAS="--extra all --extra cpu --extra codec"; \
     fi && \
-    uv pip install -r pyproject.toml --extra all --torch-backend=${UV_TORCH_BACKEND}
+    uv pip install -r pyproject.toml ${UV_EXTRAS} --torch-backend=${UV_TORCH_BACKEND}
 
 # Copy the rest of the application
 COPY . /app

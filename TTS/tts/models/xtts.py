@@ -84,7 +84,14 @@ def load_audio(audiopath, sampling_rate):
     # better load setting following: https://github.com/faroit/python_audio_loading_benchmark
 
     # torchaudio should chose proper backend to load audio depending on platform
-    audio, lsr = torchaudio.load(audiopath)
+    try:
+        audio, lsr = torchaudio.load(audiopath)
+    except Exception as exc:
+        logger.warning("Falling back to librosa audio loading for %s due to torchaudio error: %s", audiopath, exc)
+        audio_np, lsr = librosa.load(audiopath, sr=None, mono=False)
+        audio = torch.from_numpy(audio_np).float()
+        if audio.ndim == 1:
+            audio = audio.unsqueeze(0)
 
     # stereo to mono if needed
     if audio.size(0) != 1:

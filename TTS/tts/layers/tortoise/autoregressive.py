@@ -8,8 +8,16 @@ import torch.nn.functional as F
 from transformers import GenerationMixin, GPT2Config, GPT2PreTrainedModel, LogitsProcessorList
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
 
-# TODO: use torch.isin from Pytorch 2.4
-from transformers.pytorch_utils import isin_mps_friendly as isin
+try:
+    from transformers.pytorch_utils import isin_mps_friendly as isin
+except ImportError:
+
+    def isin(elements, test_elements):
+        if not torch.is_tensor(test_elements):
+            test_elements = torch.tensor(test_elements, device=elements.device)
+        else:
+            test_elements = test_elements.to(elements.device)
+        return torch.isin(elements, test_elements)
 
 from TTS.tts.layers.tortoise.arch_utils import AttentionBlock, TypicalLogitsWarper
 
