@@ -1,0 +1,26 @@
+services:
+  tts-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: coqui-local
+    container_name: coqui-tts-server
+    gpus: all
+    ports:
+      - "5002:5002"
+    environment:
+      COQUI_TOS_AGREED: "1"
+      XDG_DATA_HOME: /app/models
+      HF_HOME: /app/models/huggingface
+      HUGGINGFACE_HUB_CACHE: /app/models/huggingface/hub
+    volumes:
+      - ./models:/app/models
+      - ./voices:/voices:ro
+      - ./ejemplo:/ejemplo:ro
+    entrypoint:
+      - tts-server
+    command:
+      - --device
+      - cuda
+      - --model_name
+      - tts_models/multilingual/multi-dataset/xtts_v2

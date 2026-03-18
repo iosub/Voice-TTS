@@ -21,6 +21,18 @@
             padding-top: 54px;
         }
 
+        .cloning-status {
+            font-weight: bold;
+        }
+
+        .cloning-status.available {
+            color: #1f7a1f;
+        }
+
+        .cloning-status.unavailable {
+            color: #b42318;
+        }
+
         @media (min-width: 992px) {
             body {
                 padding-top: 56px;
@@ -58,7 +70,7 @@
     <div class="container">
         <div class="row">
             <div class="col-lg-12 text-center">
-                <img class="mt-5" src="{{url_for('static', filename='coqui-log-green-TTS.png')}}" align="middle"
+                <img class="mt-5" src="{{url_for('static', filename='coqui-log-green-TTS.png')}}" align="middle" alt="Coqui TTS logo"
                     width="512" />
 
                 <ul class="list-unstyled">
@@ -69,31 +81,58 @@
                     type="text" name="style_wav"><br /><br />
                 {%endif%}
 
-                {%if supports_cloning%}
+                {%if available_models %}
+                Choose a model:
+                <select id="model_name" name="model_name" title="Choose a model">
+                    {% for model_name in available_models %}
+                    <option value="{{model_name}}" {% if model_name == current_model_name %}selected{% endif %}>{{model_name}}</option>
+                    {% endfor %}
+                </select><br /><br />
+                <button id="load-model-button" name="load-model">Load model</button><br /><br />
+                <div id="model-info">
+                    <strong>Loaded model:</strong> <span id="current-model-name">{{ current_model_name }}</span><br />
+                    <strong>Cloning:</strong> <span id="model-cloning-status" class="cloning-status {% if current_model_metadata.supports_cloning_hint %}available{% else %}unavailable{% endif %}">{% if current_model_metadata.supports_cloning_hint %}Available{% else %}Not available{% endif %}</span><br />
+                    <span id="model-description">{{ current_model_metadata.description }}</span><br />
+                    <span id="model-license">{% if current_model_metadata.license %}License: {{ current_model_metadata.license }}{% endif %}</span><br />
+                    <span id="model-vocoder">{% if current_model_metadata.default_vocoder %}Default vocoder: {{ current_model_metadata.default_vocoder }}{% endif %}</span><br />
+                    <span id="model-tos">{% if current_model_metadata.tos_required %}Requires TOS acceptance{% endif %}</span>
+                </div><br />
+                {%endif%}
+
+                <div id="speaker-wav-container" {%if not supports_cloning%}style="display:none"{%endif%}>
+                {% if reference_audio_options %}
+                Reference audio preset:
+                <select id="speaker_wav_preset" name="speaker_wav_preset" title="Choose a reference audio preset">
+                    <option value="">Custom path...</option>
+                    {% for reference_audio in reference_audio_options %}
+                    <option value="{{reference_audio}}">{{reference_audio}}</option>
+                    {% endfor %}
+                </select><br /><br />
+                {% endif %}
                 Reference audio:
                 <input id="speaker_wav" placeholder="path/to/speaker.wav" name="speaker_wav" accept=".wav"><br /><br />
-                {%endif%}
+                </div>
 
                 <input id="text" placeholder="Type here..." size=45 type="text" name="text">
                 <button id="speak-button" name="speak">Speak</button><br /><br />
 
-                {%if use_multi_speaker%}
+                <div id="speaker-container" {%if not use_multi_speaker%}style="display:none"{%endif%}>
                 Choose a speaker:
-                <select id="speaker_id" name=speaker_id method="GET" action="/">
+                <select id="speaker_id" name=speaker_id method="GET" action="/" title="Choose a speaker">
                     {% for speaker_id in speaker_ids %}
                     <option value="{{speaker_id}}" SELECTED>{{speaker_id}}</option>"
                     {% endfor %}
                 </select><br /><br />
-                {%endif%}
+                </div>
 
-                {%if use_multi_language%}
+                <div id="language-container" {%if not use_multi_language%}style="display:none"{%endif%}>
                 Choose a language:
-                <select id="language_id" name=language_id method="GET" action="/">
+                <select id="language_id" name=language_id method="GET" action="/" title="Choose a language">
                     {% for language_id in language_ids %}
                     <option value="{{language_id}}" SELECTED>{{language_id}}</option>"
                     {% endfor %}
                 </select><br /><br />
-                {%endif%}
+                </div>
 
 
                 {%if show_details%}
@@ -108,6 +147,114 @@
 
     <!-- Bootstrap core JavaScript -->
     <script>
+        function setSelectOptions(selector, values) {
+            const element = q(selector)
+            if (!element) {
+                return
+            }
+
+            element.innerHTML = ''
+            values.forEach(function (value) {
+                const option = document.createElement('option')
+                option.value = value
+                option.textContent = value
+                element.appendChild(option)
+            })
+        }
+
+        function applyModelState(state) {
+            const speakerContainer = q('#speaker-container')
+            const languageContainer = q('#language-container')
+            const speakerWavContainer = q('#speaker-wav-container')
+
+            if (speakerContainer) {
+                speakerContainer.style.display = state.use_multi_speaker ? '' : 'none'
+            }
+            if (languageContainer) {
+                languageContainer.style.display = state.use_multi_language ? '' : 'none'
+            }
+            if (speakerWavContainer) {
+                speakerWavContainer.style.display = state.supports_cloning ? '' : 'none'
+            }
+
+            setSelectOptions('#speaker_id', state.speaker_ids || [])
+            setSelectOptions('#language_id', state.language_ids || [])
+
+            if (q('#current-model-name')) {
+                q('#current-model-name').textContent = state.current_model_name || ''
+            }
+
+            updateModelMetadata(state.current_model_metadata || {})
+        }
+
+        function updateModelMetadata(metadata, selectedModelName = '') {
+            const cloningStatus = q('#model-cloning-status')
+            const speakerWavContainer = q('#speaker-wav-container')
+
+            if (q('#model-description')) {
+                q('#model-description').textContent = metadata.description || ''
+            }
+            if (q('#model-license')) {
+                q('#model-license').textContent = metadata.license ? `License: ${metadata.license}` : ''
+            }
+            if (q('#model-vocoder')) {
+                q('#model-vocoder').textContent = metadata.default_vocoder ? `Default vocoder: ${metadata.default_vocoder}` : ''
+            }
+            if (q('#model-tos')) {
+                q('#model-tos').textContent = metadata.tos_required ? 'Requires TOS acceptance' : ''
+            }
+            if (cloningStatus) {
+                const supportsCloning = Boolean(metadata.supports_cloning_hint)
+                cloningStatus.textContent = supportsCloning ? 'Available' : 'Not available'
+                cloningStatus.classList.remove('available', 'unavailable')
+                cloningStatus.classList.add(supportsCloning ? 'available' : 'unavailable')
+                if (speakerWavContainer) {
+                    speakerWavContainer.style.display = supportsCloning ? '' : 'none'
+                }
+            }
+            if (q('#load-model-button')) {
+                q('#load-model-button').disabled = selectedModelName !== '' && selectedModelName === q('#current-model-name').textContent
+            }
+        }
+
+        function fetchModelInfo(modelName) {
+            return fetch(`/api/model-info?model_name=${encodeURIComponent(modelName)}`, { cache: 'no-cache' })
+                .then(function (res) {
+                    if (!res.ok) throw Error(res.statusText)
+                    return res.json()
+                }).then(function (state) {
+                    updateModelMetadata(state.metadata || {}, state.selected_model_name || '')
+                    if (q('#message')) {
+                        q('#message').textContent = state.is_loaded ? 'Model already loaded.' : ''
+                    }
+                }).catch(function (err) {
+                    q('#message').textContent = 'Error: ' + err.message
+                })
+        }
+
+        function loadModel(modelName) {
+            q('#message').textContent = 'Loading model...'
+            q('#speak-button').disabled = true
+            if (q('#load-model-button')) {
+                q('#load-model-button').disabled = true
+            }
+            return fetch(`/api/model?model_name=${encodeURIComponent(modelName)}`, { cache: 'no-cache' })
+                .then(function (res) {
+                    if (!res.ok) throw Error(res.statusText)
+                    return res.json()
+                }).then(function (state) {
+                    applyModelState(state)
+                    q('#message').textContent = ''
+                    q('#speak-button').disabled = false
+                }).catch(function (err) {
+                    q('#message').textContent = 'Error: ' + err.message
+                    q('#speak-button').disabled = false
+                    if (q('#load-model-button')) {
+                        q('#load-model-button').disabled = false
+                    }
+                })
+        }
+
         function getTextValue(textId) {
             const container = q(textId)
             if (container) {
@@ -121,28 +268,55 @@
             const text = q('#text').value
             const style_wav = getTextValue('#style_wav')
             const speaker_wav = getTextValue('#speaker_wav')
+            const model_name = getTextValue('#model_name')
+            const loaded_model_name = q('#current-model-name') ? q('#current-model-name').textContent : ''
             let speaker_id = getTextValue('#speaker_id')
             if (speaker_wav !== '') {
                 speaker_id = ''
             }
             const language_id = getTextValue('#language_id')
             if (text) {
+                if (model_name && loaded_model_name && model_name !== loaded_model_name) {
+                    q('#message').textContent = 'Load the selected model before synthesizing.'
+                    e.preventDefault()
+                    return false
+                }
                 q('#message').textContent = 'Synthesizing...'
                 q('#speak-button').disabled = true
                 q('#audio').hidden = true
-                synthesize(text, speaker_id, style_wav, speaker_wav, language_id)
+                synthesize(text, speaker_id, style_wav, speaker_wav, language_id, model_name)
             }
             e.preventDefault()
             return false
         }
         q('#speak-button').addEventListener('click', do_tts)
+        if (q('#model_name')) {
+            q('#model_name').addEventListener('change', function (e) {
+                fetchModelInfo(e.target.value)
+            })
+        }
+        if (q('#load-model-button')) {
+            q('#load-model-button').addEventListener('click', function (e) {
+                const modelName = getTextValue('#model_name')
+                if (modelName) {
+                    loadModel(modelName)
+                }
+                e.preventDefault()
+                return false
+            })
+        }
+        if (q('#speaker_wav_preset')) {
+            q('#speaker_wav_preset').addEventListener('change', function (e) {
+                q('#speaker_wav').value = e.target.value
+            })
+        }
         q('#text').addEventListener('keyup', function (e) {
             if (e.keyCode == 13) { // enter
                 do_tts(e)
             }
         })
-        function synthesize(text, speaker_id = "", style_wav = "", speaker_wav = "", language_id = "") {
-            fetch(`/api/tts?text=${encodeURIComponent(text)}&speaker_id=${encodeURIComponent(speaker_id)}&style_wav=${encodeURIComponent(style_wav)}&speaker_wav=${encodeURIComponent(speaker_wav)}&language_id=${encodeURIComponent(language_id)}`, { cache: 'no-cache' })
+        function synthesize(text, speaker_id = "", style_wav = "", speaker_wav = "", language_id = "", model_name = "") {
+            fetch(`/api/tts?text=${encodeURIComponent(text)}&speaker_id=${encodeURIComponent(speaker_id)}&style_wav=${encodeURIComponent(style_wav)}&speaker_wav=${encodeURIComponent(speaker_wav)}&language_id=${encodeURIComponent(language_id)}&model_name=${encodeURIComponent(model_name)}`, { cache: 'no-cache' })
                 .then(function (res) {
                     if (!res.ok) throw Error(res.statusText)
                     return res.blob()
@@ -155,6 +329,10 @@
                     q('#message').textContent = 'Error: ' + err.message
                     q('#speak-button').disabled = false
                 })
+        }
+
+        if (q('#model_name')) {
+            fetchModelInfo(q('#model_name').value)
         }
     </script>
 

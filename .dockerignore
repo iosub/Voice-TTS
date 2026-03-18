@@ -5,7 +5,14 @@ dockerfiles/
 build/
 dist/
 TTS.egg-info/
+models/
+outputs/
+tts-output/
+voices/
+ejemplo/
 tests/outputs/*
 tests/train_outputs/*
 __pycache__/
 *.pyc
+models/
+logs/
